@@ -55,7 +55,17 @@ void checkArgs(int argc, char * argv[], Parameters * myParameters);
 int main (int argc, char *argv[])
  {
 	int socketNum = 0;				
-	Parameters myParameters = {0};
+	Parameters myParameters = {
+		.fromFilename = {0},
+		.fromFilenameLen = 0,
+		.toFilename = {0},
+		.toFilenameLen = 0,
+		.windowSize = 0,
+		.bufferSize = 0,
+		.errorRate = 0.0,
+		.remoteMachine = {0},
+		.portNumber = 0
+	};
 	
 	checkArgs(argc, argv, &myParameters);
 

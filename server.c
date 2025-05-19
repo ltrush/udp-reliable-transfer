@@ -10,6 +10,8 @@
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
+#include <sys/wait.h>
+#include <signal.h>
 
 #include "cpe464.h"
 #include "connection.h"
