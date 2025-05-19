@@ -1,0 +1,10 @@
+{
+  "files.associations": {
+    "stdint.h": "c",
+    "safeutil.h": "c",
+    "pduhelpers.h": "c",
+    "checksum.h": "c",
+    "gethostbyname.h": "c",
+    "networks.h": "c"
+  }
+}
