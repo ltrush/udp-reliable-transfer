@@ -5,6 +5,10 @@
     "pduhelpers.h": "c",
     "checksum.h": "c",
     "gethostbyname.h": "c",
-    "networks.h": "c"
+    "networks.h": "c",
+    "slidingwindow.h": "c",
+    "sharedconstants.h": "c",
+    "__locale": "c",
+    "print": "c"
   }
 }

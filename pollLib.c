@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "sharedConstants.h"
 #include "safeUtil.h"
 #include "pollLib.h"
 
@@ -77,7 +78,8 @@ int pollCall(int timeInMilliSeconds)
 		perror("pollCall");
 		exit(-1);
 	}	
-			
+	// printf("poll says there are %d sockets ready\n", pollValue);
+
 	// check to see if timeout occurred (poll returned 0)
 	if (pollValue > 0)
 	{
@@ -89,16 +91,40 @@ int pollCall(int timeInMilliSeconds)
 			//Otherwise, this could mask an error (eat the error condition)
 			if(pollFileDescriptors[i].revents > 0) 
 			{
-				//printf("for socket %d poll revents: %d\n", i, pollFileDescriptors[i].revents);
+				// printf("for socket %d poll revents: %d\n", i, pollFileDescriptors[i].revents);
 				returnValue = i;
 				break;
 			} 
 		}
 
 	}
-	
+
 	// Ready socket # or -1 if timeout/none
 	return returnValue;
+}
+
+int processPoll(Connection * client, int * tryCount, int time, int maxTries, int pollTimeoutState, int receivedDataState, int doneState) {
+    // Returns:
+    // doneState if calling this function exceeds MAX_TRIES
+    // selectTimeoutState if the select times out without receiving anything
+    // dataReadyState if select() returns indicating that data is ready for read
+
+    int returnValue = receivedDataState;
+	
+    (*tryCount)++;
+    if (pollCall(time) > 0)
+    {
+        *tryCount = 0;
+        returnValue = receivedDataState;
+    }
+	else if (*tryCount >= maxTries)
+    {
+        printf("No response from other side (%d tries, %d sec each), terminating connection\n", maxTries, time / 1000);
+        returnValue = doneState;
+    }
+    else returnValue = pollTimeoutState;
+
+    return returnValue;
 }
 
 static void growPollSet(int newSetSize)

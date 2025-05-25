@@ -12,7 +12,26 @@
 
 #define CHECKSUM_SIZE 2
 
-int createPDU(uint8_t * pduBuffer, uint32_t sequenceNumber, uint8_t flag, uint8_t * payload, int payloadLen) {
+void sendPDU(const Connection *connection, uint8_t *payload, int payloadLen, int flag, int seqNum)
+{
+    uint8_t pdu[MAX_PDU_SIZE] = {0};
+    int pduLen = createPDU(pdu, seqNum, flag, payload, payloadLen);
+    safeSendto(connection->socketNum, pdu, pduLen, 0, (struct sockaddr *)&connection->info, connection->addrLen);
+}
+
+// retrieves pdu from connection, sets checksumResult, parses flag & seqNum
+// returns payload length
+int retrievePDU(Connection *connection, uint8_t *flag, uint32_t *seqNum, int *checksumResult, uint8_t *payload)
+{
+    uint8_t pdu[MAX_PDU_SIZE] = {0};
+    int pduLen = safeRecvfrom(connection->socketNum, pdu, MAX_PDU_SIZE, 0, (struct sockaddr *) &connection->info, &connection->addrLen);
+    int payloadSize = retrieveHeader(pdu, pduLen, flag, seqNum, checksumResult);
+    memcpy(payload, pdu + PDU_HEADER_SIZE, payloadSize);
+    return payloadSize;
+}
+
+int createPDU(uint8_t *pduBuffer, uint32_t sequenceNumber, uint8_t flag, uint8_t *payload, int payloadLen)
+{
     uint16_t checkSum = 0;
     int pduLength = sizeof(sequenceNumber) + sizeof(checkSum) + sizeof(flag) + payloadLen;
 
@@ -26,11 +45,9 @@ int createPDU(uint8_t * pduBuffer, uint32_t sequenceNumber, uint8_t flag, uint8_
     return pduLength;
 }
 
-void sendFlagOnly(const Connection * connection, int flag) {
-    uint8_t pdu[MAX_PDU_SIZE] = {0};
-	int pduLen = 0;
-    pduLen = createPDU(pdu, 0, flag, 0, 0); // no payload
-	safeSendto(connection->socketNum, pdu, pduLen, 0, (struct sockaddr *) &connection->info, connection->addrLen);
+void sendFlagOnly(const Connection *connection, int flag, uint32_t seqNum)
+{
+    sendPDU(connection, 0, 0, flag, seqNum);
 }
 
 // int32_t recv_buf(uint8_t * buf, int32_t len, int32_t serverSocketNum, Connection * connection, uint8_t * flag, uint32_t * seq_num)
@@ -50,44 +67,47 @@ void sendFlagOnly(const Connection * connection, int flag) {
 //     return dataLen;
 // }
 
-void retrieveHeader(uint8_t * pdu, int pduLen, uint8_t * flag, uint32_t * seqNum) {
-    Header * myHeader = (Header *) pdu;
-    // int returnValue = 0;
+// fills flag, seqNum, and checksumStatus fields and returns payload length
+int retrieveHeader(uint8_t *pdu, int pduLen, uint8_t *flag, uint32_t *seqNum, int * checksumStatus)
+{
+    int payloadLen = 0;
 
-    // if (in_cksum((unsigned short *) data_buf, recv_len) != 0) {
-    //     returnValue = CRC_ERROR;
-    // }
-    // else {
-        *flag = myHeader->flag;
-        memcpy(seqNum, &(myHeader->seqNum), sizeof(myHeader->seqNum));
-        *seqNum = ntohl(*seqNum);
+    *checksumStatus = checkChecksum(pdu, pduLen);
 
-        // returnValue = recv_len - sizeof(Header);
-    // }
+    memcpy(seqNum, pdu, sizeof(*seqNum));
+    memcpy(flag, pdu + sizeof(*seqNum) + CHECKSUM_SIZE, sizeof(*flag));
+    *seqNum = ntohl(*seqNum);
 
-    // return returnValue;
+    payloadLen = pduLen - PDU_HEADER_SIZE;
+    
+    return payloadLen;
 }
 
-int checkChecksum(uint8_t * aPDU, int pduLength) {
+int checkChecksum(uint8_t *aPDU, int pduLength)
+{
     uint16_t checkSum = in_cksum((unsigned short *)aPDU, pduLength);
-    if (checkSum == 0) {
-        #ifdef DEBUG
+    if (checkSum == 0)
+    {
+    #ifdef DEBUG
             printf("Checksum: Correct (0x%04x)\n", checkSum);
-        #endif
+    #endif
         return CRC_GOOD;
     }
-    else {
-        #ifdef DEBUG
+    else
+    {
+    #ifdef DEBUG
             printf("PDU corrupted: checksum is incorrect (0x%04x)\n", checkSum);
-        #endif
+    #endif
         return CRC_ERROR;
     }
 }
 
-void printPDU(uint8_t * aPDU, int pduLength) {
+void printPDU(uint8_t *aPDU, int pduLength)
+{
     printf("-------- PDU Information --------\n\n");
 
-    if (checkChecksum(aPDU, pduLength) == CRC_ERROR) return;
+    if (checkChecksum(aPDU, pduLength) == CRC_ERROR)
+        return;
 
     uint32_t sequenceNumber_n = 0;
     memcpy(&sequenceNumber_n, aPDU, sizeof(sequenceNumber_n));

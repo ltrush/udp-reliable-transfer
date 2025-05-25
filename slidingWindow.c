@@ -1,41 +1,78 @@
 #include <stdlib.h>
 #include "slidingWindow.h"
+#include <stdio.h>
+#include <string.h>
 #include "safeUtil.h"
 
-static struct PDU * window;
-int myWindowSize;
-int upper;
-int lower;
-int current;
+static Data *window;
+static int myWindowSize;
+static int upper;
+static int lower;
+static int current;
 
-void setupWindow(int windowSize, int pduSize) {
+void setupWindow(int windowSize)
+{
     myWindowSize = windowSize;
-    window = (struct PDU *)sCalloc(myWindowSize, pduSize);
+    window = (Data *)sCalloc(windowSize, sizeof(Data));
     lower = 0;
     current = 0;
     upper = windowSize;
 }
 
-int isWindowOpen() {
+int isWindowOpen()
+{
     return current != upper;
 }
 
-int isWindowClosed() {
+int isWindowClosed()
+{
     return current == upper;
 }
 
-void addPDU(int sequenceNum, uint8_t * pdu, int pduLen) {
-    if (isWindowClosed()) {
+int getLower() {return lower;}
+
+void updateLower(uint32_t seqNum)
+{
+    lower = seqNum;
+    upper = lower + myWindowSize;
+}
+
+int getIndex(int seqNum) {return seqNum % myWindowSize;}
+
+int getLowestSeqNumData(uint8_t *data, uint32_t *seqNum)
+{
+    int index = getIndex(lower);
+    int dataLen = window[index].dataLen;
+    *seqNum = window[index].seqNum;
+    memcpy(data, window[index].data, dataLen);
+    return dataLen;
+}
+
+uint32_t getLowestSeqNum()
+{
+    int index = getIndex(lower);
+    return window[index].seqNum;
+}
+
+void addDataToWindow(uint32_t sequenceNum, uint8_t *data, int dataLen)
+{
+    if (isWindowClosed())
+    {
         printf("error: adding PDU to window when window is closed");
         exit(1);
     }
 
-    int index = sequenceNum % myWindowSize;
-    memcpy(&window[index], pdu, pduLen);
+    int index = getIndex(sequenceNum);
+    memcpy(window[index].data, data, dataLen);
+    window[index].dataLen = dataLen;
+    window[index].seqNum = sequenceNum;
     current++;
 }
 
-uint8_t * getPDU(int sequenceNum) {
-    int index = sequenceNum % myWindowSize;
-    return &window[sequenceNum].data;
+int getDataFromWindow(uint32_t sequenceNum, uint8_t *data)
+{
+    int index = getIndex(sequenceNum);
+    int dataLen = window[index].dataLen;
+    memcpy(data, window[index].data, dataLen);
+    return dataLen;
 }
