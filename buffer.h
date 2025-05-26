@@ -2,6 +2,7 @@
 #define BUFFER_H
 
 #include <stdlib.h>
+#include <stdint.h>
 #include "sharedConstants.h"
 
 #define DATA_VALID 1
