@@ -8,7 +8,7 @@
 #include "sharedConstants.h"
 #include "pduHelpers.h"
 
-#define DEBUG
+// #define DEBUG
 
 #define CHECKSUM_SIZE 2
 

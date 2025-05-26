@@ -24,7 +24,7 @@
 #include "networks.h"
 #include "safeUtil.h"
 
-#define DEBUG
+// #define DEBUG
 #define MAXBUF 80
 
 typedef enum State STATE;
@@ -41,7 +41,6 @@ enum State {
 
 STATE processFilename(Connection * client, uint8_t * payload, int pduLen, int32_t * dataFile, uint32_t * bufferSize, uint32_t * windowSize);
 STATE filenameOk(Connection * client);
-STATE recvFilenameOkAck(Connection * client);
 STATE sendData(Connection * client, int dataFile, int windowSize, int bufferSize, uint32_t *seqNum);
 STATE sendEofAndWaitForAck(Connection * client, uint32_t * seqNum);
 
@@ -131,45 +130,37 @@ void processClient(uint8_t * pdu, int pduLen, Connection * client)
                 break;
 
             case PROCESS_FILENAME:
-				printf("\nIn PROCESS_FILENAME state\n");
+				#ifdef DEBUG
+					printf("\nIn PROCESS_FILENAME state\n");
+				#endif
                 state = processFilename(client, pdu + PDU_HEADER_SIZE, pduLen, &dataFile, &bufferSize, &windowSize);
                 break;
 
 			case WAIT_ON_FILENAME_OK_ACK:
-				printf("\nIn WAIT_ON_FILENAME_OK_ACK state\n");
+				#ifdef DEBUG
+					printf("\nIn WAIT_ON_FILENAME_OK_ACK state\n");
+				#endif
 				state = filenameOk(client);
 				break;
-			
-			// case RECV_FNAME_OK_ACK:
-			// 	printf("\nIn RECV_FNAME_OK_ACK state\n");
-			// 	state = recvFilenameOkAck(client);
-			// 	break;
 
             case SEND_DATA:
-				printf("\nIn SEND_DATA state\n");
+				#ifdef DEBUG
+					printf("\nIn SEND_DATA state\n");
+				#endif
                 state = sendData(client, dataFile, windowSize, bufferSize, &serverSeqNum);
                 break;
 
             case SEND_EOF:
-				printf("\nIn SEND_EOF state\n");
+				#ifdef DEBUG
+					printf("\nIn SEND_EOF state\n");
+				#endif
                 state = sendEofAndWaitForAck(client, &serverSeqNum);
                 break;
 
-            // case TIMEOUT_ON_ACK:
-            //     state = timeout_on_ack(client, packet, packet_len);
-            //     break;
-
-            // case WAIT_ON_EOF_ACK:
-			// 	printf("\nIn WAIT_ON_EOF_ACK state\n");
-            //     state = sendEofAndWaitForAck(client, &serverSeqNum);
-            //     break;
-
-            // case TIMEOUT_ON_EOF_ACK:
-            //     state = timeout_on_eof_ack(client, packet, packet_len);
-            //     break;
-
             case DONE:
-				printf("\nIn DONE state\n");
+				#ifdef DEBUG
+					printf("\nIn DONE state\n");
+				#endif
                 break;
 
             default:
@@ -246,36 +237,8 @@ STATE filenameOk(Connection * client) {
 	uint32_t clientSeqNum;
 	int checksumResult;
 	uint8_t payload[MAX_PAYLOAD_SIZE];
-	retrievePDU(client, &flag, &clientSeqNum, &checksumResult, payload);
+	retrievePDU(client, &flag, &clientSeqNum, &checksumResult, payload); // don't need to check any of this, receiving packet now implies rcopy ready to receive data
 	return SEND_DATA;
-}
-
-// dont need this function
-STATE recvFilenameOkAck(Connection * client) {
-	STATE nextState = SEND_DATA;
-    uint8_t pdu[MAX_PDU_SIZE] = {0};
-	safeRecvfrom(client->socketNum, pdu, MAX_PDU_SIZE, 0, (struct sockaddr *) &client->info, &client->addrLen);
-		
-	// asked in piazza about this, but for now im gonna just assumed the filename ack is good
-	// if (checkChecksum(pdu, pduLen) == CRC_ERROR) {
-	// 	#ifdef DEBUG
-	// 		printf("Possible FNAME_OK_ACK packet corrupted. Quitting.\n");
-	// 	#endif
-	// 	nextState = DONE;
-	// } else {
-	// 	uint8_t flag = 0;
-	// 	uint32_t seqNum = 0;
-	// 	retrieveHeader(pdu, pduLen, &flag, &seqNum);
-	// 	if (flag == FNAME_OK_ACK) nextState = SEND_DATA;
-	// 	else {
-	// 		#ifdef DEBUG
-	// 		printf("Packet received was not FNAME_OK_ACK. Quitting\n");
-	// 		#endif
-	// 		nextState = DONE;
-	// 	}
-	// }
-
-	return nextState;
 }
 
 STATE sendData(Connection * client, int dataFile, int windowSize, int bufferSize, uint32_t *serverSeqNum) {
@@ -307,7 +270,6 @@ STATE sendData(Connection * client, int dataFile, int windowSize, int bufferSize
 		#endif
 
 		if (!atEOF) {
-			printf("adding data with seq # %d\n", *serverSeqNum);
 			addDataToWindow(*serverSeqNum, payload, lenRead);
 			sendPDU(client, payload, lenRead, DATA, *serverSeqNum);
 			(*serverSeqNum)++;
@@ -340,8 +302,9 @@ STATE sendData(Connection * client, int dataFile, int windowSize, int bufferSize
 				uint8_t data[MAX_PAYLOAD_SIZE] = {0};
 				uint32_t seqNum = 0;
 				int dataLen = getLowestSeqNumData(data, &seqNum);
-				printf("Resending lowest\nData: %s\n", data);
-				printf("seqnum: %d\n", seqNum);
+				#ifdef DEBUG
+					printf("Resending lowest data in window\n");
+				#endif
 				sendPDU(client, data, dataLen, RESENT_DATA_TIMEOUT, seqNum);
 				break;
 			}
@@ -467,8 +430,8 @@ void checkArgs(int argc, char * argv[], double * errorRate, int * portNumber)
 		exit(1);
 	}
 
-	if ((*errorRate = atof(argv[1])) == 0 || *errorRate >= 1) {
-		printf("error-rate must be between 0 and 1\n");
+	if ((*errorRate = atof(argv[1])) >= 1) {
+		printf("error-rate must be >= 0 and < 1\n");
 		exit(1);
 	}
 

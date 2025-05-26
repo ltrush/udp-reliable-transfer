@@ -24,7 +24,7 @@
 #include "networks.h"
 #include "safeUtil.h"
 
-#define DEBUG
+// #define DEBUG
 #define MAX_REMOTE_MACHINE_NAME_LEN 1000 // arbitrary
 
 typedef struct Parameters{ // IS THIS OKAY TO HAVE IN HERE? or should be in header file
@@ -210,7 +210,6 @@ STATE getFilenameStatus(Parameters * myParameters, Connection * server)
 	retrievePDU(server, &flag, &seqNum, &checksumResult, payload);
 	uint8_t filenameStatus = payload[0];
 
-// one is fix this to retrievePDu and two is to make it so that we poll for 1 second 10times after sending file ok ack while we wait for first data,
 	if (checksumResult == CRC_ERROR)
 	{
 		#ifdef DEBUG
@@ -218,7 +217,7 @@ STATE getFilenameStatus(Parameters * myParameters, Connection * server)
 		#endif
 		nextState = SETUP_CONNECTION;
 	} else if (filenameStatus == FNAME_BAD) {
-		printf("File \"%s\" not found by server\n", myParameters->fromFilename);
+		printf("Error: file %s not found\n", myParameters->fromFilename);
 		nextState = DONE;
 	} else if (filenameStatus == FNAME_OK) {
 		#ifdef DEBUG
@@ -226,7 +225,7 @@ STATE getFilenameStatus(Parameters * myParameters, Connection * server)
 		#endif
 		
 		if ((outputFileDesc = open(myParameters->toFilename, O_CREAT | O_TRUNC | O_WRONLY, 0600)) < 0) {
-			perror("File open error: ");
+			printf("Error on open of output file: %s\n", myParameters->toFilename);
 			nextState = DONE;
 		} else {
 			nextState = FILENAME_OK;
@@ -257,7 +256,7 @@ STATE receiveData(Connection * server, uint32_t * clientSeqNum)
 	uint8_t pdu[MAX_PDU_SIZE] = {0};
     uint8_t payload[MAX_PAYLOAD_SIZE] = {0};
     static uint32_t expectedSeqNum = START_SEQ_NUM;
-	uint32_t highestSeqNum = expectedSeqNum;
+	static uint32_t highestSeqNum = START_SEQ_NUM;
 
 	if (pollCall(LONG_TIME) == 0)
     {
@@ -328,13 +327,14 @@ DATA_STATE inOrder(Connection * server, uint32_t * clientSeqNum, uint32_t * expe
 		// buffer data and send SREJ for missing seq #
 		*highestRecvSeqNum = receivedSeqNum;
 		addDatatoBuffer(receivedSeqNum, flag, payload, payloadLen);
-		printf("added data to buffer\n");
 		sendSREJ(server, clientSeqNum, *expectedSeqNum);
 		nextDataState = BUFFER;
 	} else sendRR(server, clientSeqNum, *expectedSeqNum);
 
 	return nextDataState;
 }
+
+
 
 DATA_STATE buffer(Connection * server, uint32_t * clientSeqNum, uint32_t * expectedSeqNum, uint32_t receivedSeqNum, uint32_t * highestRecvSeqNum, uint8_t * payload, int payloadLen, uint8_t flag) {
 	DATA_STATE nextDataState = BUFFER;
@@ -356,8 +356,10 @@ DATA_STATE buffer(Connection * server, uint32_t * clientSeqNum, uint32_t * expec
 		*highestRecvSeqNum = receivedSeqNum;
 		addDatatoBuffer(receivedSeqNum, flag, payload, payloadLen);
 		nextDataState = BUFFER;
-	} else sendRR(server, clientSeqNum, *expectedSeqNum);
-	
+	} else {
+		sendRR(server, clientSeqNum, *expectedSeqNum);
+		sendSREJ(server, clientSeqNum, *expectedSeqNum);
+	}
 	return nextDataState;
 }
 
@@ -408,7 +410,9 @@ void sendSREJ(Connection * server, uint32_t *clientSeqNum, uint32_t missingSeqNu
 STATE sendEOFAck(Connection * server, uint32_t * clientSeqNum) {
 	sendFlagOnly(server, EOF_ACK, *clientSeqNum);
 	(*clientSeqNum)++;
-	printf("File done!\n");
+	#ifdef DEBUG
+		printf("File done!\n");
+	#endif
 	return DONE;
 }
 
@@ -456,13 +460,13 @@ void checkArgs(int argc, char * argv[], Parameters * myParameters)
 
 	*windowSize = atoi(argv[3]);
 	*bufferSize = atoi(argv[4]);
-	if (*bufferSize < 400 || *bufferSize > 1400) {
-		printf("buffer-size (given as %d) must be between 400 and 1400\n", *bufferSize);
+	if (*bufferSize < 1 || *bufferSize > 1400) {
+		printf("buffer-size (given as %d) must be between 1 and 1400\n", *bufferSize);
 		exit(1);
 	}
 
-	if ((*errorRate = atof(argv[5])) == 0 || *errorRate >= 1) {
-		printf("error-rate (given as %s) must be between 0 and 1\n", argv[5]);
+	if ((*errorRate = atof(argv[5])) >= 1) {
+		printf("error-rate (given as %s) must be >= 1 and < 1\n", argv[5]);
 		exit(1);
 	}
 	
