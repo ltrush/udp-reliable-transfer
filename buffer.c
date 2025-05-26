@@ -11,7 +11,8 @@ static int myBufferSize;
 void setupBuffer(int bufferSize) {
     myBufferSize = bufferSize;
     buffer = (Data *)sCalloc(bufferSize, sizeof(Data));
-    for (int i = 0; i < bufferSize; i++) {
+    int i = 0;
+    for (i = 0; i < bufferSize; i++) {
         buffer[i].valid = 0;
     }
 }
