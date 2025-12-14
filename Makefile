@@ -9,7 +9,7 @@ BIN_DIR  = bin
 BUILD_DIR= build
 OBJ_DIR  = $(BUILD_DIR)/obj
 
-CFLAGS = -g -Wall -I$(INC_DIR) -D__LIBCPE464_
+CFLAGS = -g -Wall -I$(INC_DIR) -D__LIBCPE464_ -MMD -MP
 LIBS   = $(LIB_DIR)/libcpe464.2.21.a -lstdc++ -ldl
 
 OBJS = \
@@ -20,6 +20,8 @@ OBJS = \
 	$(OBJ_DIR)/pduHelpers.o \
 	$(OBJ_DIR)/slidingWindow.o \
 	$(OBJ_DIR)/buffer.o
+
+DEPS = $(OBJS:.o=.d) $(OBJ_DIR)/rcopy.d $(OBJ_DIR)/server.d $(OBJ_DIR)/myClient.d $(OBJ_DIR)/myServer.d
 
 all: udpAll
 
@@ -41,6 +43,8 @@ $(BIN_DIR)/myServer: $(OBJ_DIR)/myServer.o $(OBJS) | $(BIN_DIR)
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+ -include $(DEPS)
+
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
@@ -54,5 +58,4 @@ cleano:
 
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
-
 

@@ -23,10 +23,10 @@ This project is a small, TCP-like file transfer built on top of UDP. UDP by itse
 
 - `src/` — all C sources (`rcopy.c`, `server.c`, `pduHelpers.c`, `slidingWindow.c`, `buffer.c`, `pollLib.c`, `networks.c`, `safeUtil.c`, `gethostbyname.c`, sample TCP `myClient.c`/`myServer.c`)
 - `include/` — headers for the above, plus protocol constants (`sharedConstants.h`, `connection.h`, `checksum.h`, etc.)
-- `lib/` — provided `libcpe464.2.21.a` and the reference `libcpe464/` sources from the course
+- `lib/` — provided `libcpe464.2.21.a` and the reference `libcpe464/` sources from CPE 464 course at Cal Poly
 - `bin/` — built executables (`rcopy`, `server`, `myClient`, `myServer`)
 - `build/` — intermediate objects (`build/obj`) and debug symbol folders
-- `data/` — sample files you can request/transfer (`fromFile.txt`, `420kb`, etc.)
+- `data/` — sample file you can request/transfer (`fromFile.txt`)
 - `docs/` — assignment PDFs and design questions
 - `Makefile` — build rules
 
