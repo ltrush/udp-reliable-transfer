@@ -1,174 +1,116 @@
-# Program 3 — Selective Reject ARQ
+# Selective Reject ARQ File Transfer Protocol
 
-**CPE 464 — Spring 2025**
-Author: **Luke Trusheim**
-Lab Section: **(insert lab time)**
+**CPE 464 — Spring 2025**  
+Author: **Luke Trusheim**  
 
 ---
 
 ## Overview
 
-This project implements a **Selective Reject (SREJ) sliding-window file transfer protocol** over **UDP**, following the full specification of Programming Assignment #3 for CPE 464. 
+This project is a small, TCP-like file transfer built on top of UDP. UDP by itself can drop, duplicate, or reorder packets, so the code implements its own reliability:
 
-The goal of this project is to reliably transfer a file from a server to a client despite packet loss, corruption, duplication, delay, and reordering—all while using a custom application-level protocol layered on top of unreliable datagrams.
+- A sliding window so multiple packets can be “in flight” at once.
+- Cumulative acknowledgments (`RR`) to advance the window.
+- Targeted retransmissions (`SREJ`) to plug individual gaps without resending everything.
+- Checksums to detect bit flips.
+- An EOF/ACK handshake so both sides agree the transfer is done.
 
-This repository contains two programs:
-
-* **rcopy** — the client that requests a file from the server, receives packets, handles buffering/SREJ/RR logic, and writes the final output file.
-* **server** — the multiprocess UDP server that listens for incoming rcopy requests, forks child processes to handle each client concurrently, and performs sliding-window transmission of file data.
-
-Both programs use a **custom PDU format**, **internet checksum**, **circular buffering**, and **sendtoErr()** for every single packet transmission.
+`rcopy` is the client: it asks for a file, buffers any out-of-order packets, requests resends for missing ones, and writes the result to disk. `server` is the sender: it forks per client, reads the file, keeps a circular send window, and retransmits on SREJ or timeout. Both use `sendtoErr()` to inject controlled loss/corruption so you can observe recovery behavior.
 
 ---
 
-## Program Structure
+## Repository Layout
 
-(Adjust names if yours differ.)
-
-```
-.
-├── rcopy.c
-├── server.c
-├── window.c           <-- circular window/buffer library
-├── window.h
-├── pdu.c              <-- packet encoding/decoding helpers
-├── pdu.h
-├── checksum.c         <-- Internet checksum (provided template)
-├── checksum.h
-├── pollLib.c          <-- provided poll library
-├── pollLib.h
-├── Makefile
-└── README.md
-```
+- `rcopy.c` — client state machine, buffering, RR/SREJ logic, file writeout
+- `server.c` — fork-per-client UDP server, windowed sender, EOF/ack teardown
+- `slidingWindow.c/h` — sender-side circular window and resend helpers
+- `buffer.c/h` — receiver-side circular buffer for out-of-order PDUs
+- `pduHelpers.c/h` — PDU construction/parsing, checksum helpers
+- `pollLib.c/h`, `networks.c/h`, `safeUtil.c/h`, `gethostbyname.c/h` — provided course utilities
+- `sharedConstants.h`, `connection.h`, `checksum.h` — protocol constants and shared types
+- `Makefile`, `libcpe464.2.21.a` — build rules and provided `sendtoErr` library
 
 ---
 
 ## Building
 
+```bash
+make          # builds rcopy and server (udpAll target)
+make tcpAll   # builds sample TCP programs (not used by SREJ)
+make clean    # remove binaries and object files
 ```
-make
-```
-
-Produces the binaries:
-
-* `rcopy`
-* `server`
 
 ---
 
-## Running the Programs
+## Running
 
 ### Server
 
+```bash
+./server <error-rate> [port]
 ```
-server <error-rate> [optional-port-number]
-```
+
+- `error-rate`: 0 <= p < 1, passed to `sendtoErr_init()`
+- `port` optional: if omitted, the OS chooses one and it is printed at startup
 
 Example:
 
-```
-server .1
-Server is using port 1234
+```bash
+./server 0.1
+Server using Port #: 52054
 ```
 
-### Client (rcopy)
+### Client
 
+```bash
+./rcopy from-file to-file window-size buffer-size error-rate remote-machine remote-port
 ```
-rcopy from-file to-file window-size buffer-size error-rate remote-machine remote-port
-```
+
+- `window-size`: receiver sliding window size (also sent to server for sender window)
+- `buffer-size`: bytes per data chunk (1–1400), sent to server so it reads that many bytes from disk
+- `error-rate`: 0 <= p < 1, for the client’s `sendtoErr_init()`
+- `remote-machine`: host running `server`
+- `remote-port`: port printed by the server
 
 Example:
 
-```
-rcopy input.txt output.txt 10 1000 .1 unix1.csc.calpoly.edu 1234
-```
-
----
-
-## Protocol Summary
-
-### Header (7 bytes)
-
-* **4 bytes** sequence number (network order)
-* **2 bytes** checksum
-* **1 byte** flag
-
-### Data Payload
-
-* 1–1400 bytes of file data
-* OR a 4-byte sequence number (RR / SREJ)
-* OR filename + parameters during setup
-
-### Flags (per assignment requirements)
-
-```
-5   RR
-6   SREJ
-8   Request (filename + window + buffer)
-9   Server response to request
-10  EOF / final data packet
-16  Regular data packet
-17  Resent due to SREJ
-18  Resent due to timeout
->=32 User-defined flags (if needed)
+```bash
+./rcopy fromFile.txt toFile.txt 10 1000 0.05 localhost 52054
 ```
 
-### Sender Logic (server)
+---
 
-* Maintains circular window buffer
-* Sends while window is open (non-blocking poll())
-* When window closes, uses 1-second blocking poll()
-* On timeout in closed-window state, resends lowest unacknowledged packet
-* Respects strict limits on when timeouts are allowed
+## Protocol Details
 
-### Receiver Logic (rcopy)
+- **PDU format:** 4-byte sequence number (network order) + 2-byte checksum + 1-byte flag + payload (0–1400 bytes).
+- **Flags (see `sharedConstants.h`):**
+  - `FNAME` (8): client request, payload = buffer size (4 bytes) + window size (4 bytes) + null-terminated filename
+  - `FNAME_STATUS` (9) with payload `FNAME_OK` (32) or `FNAME_BAD` (33)
+  - `FNAME_OK_ACK` (34): client ack after OK
+  - `DATA` (16): new data
+  - `RESENT_DATA_SREJ` (17) / `RESENT_DATA_TIMEOUT` (18): retransmits
+  - `RR` (5) / `SREJ` (6): payload is the expected/missing seqNum (network order)
+    - `RR` = Receive Ready. Tells the sender “I have everything up to seq N-1; next in-order is N.” This is a cumulative ACK.
+    - `SREJ` = Selective Reject. Tells the sender “I am missing seq N; please resend just that one.” This is a targeted NACK.
+  - `END_OF_FILE` (10) / `EOF_ACK` (35)
 
-* Verifies checksum; drops corrupted packets
-* Buffers out-of-order data in circular buffer
-* Sends RR for contiguous progress
-* Sends SREJ for missing packets
-* Writes in-order data to disk
-* Manages clean teardown
+### Connection Setup
+1. `rcopy` sends `FNAME` with requested file name, desired window size, and buffer size.
+2. Server replies `FNAME_STATUS` with `FNAME_OK` or `FNAME_BAD`.
+3. If OK, `rcopy` sends `FNAME_OK_ACK` and transitions to data reception; on BAD it exits.
+
+### Data Transfer & Reliability
+- Server uses the client-provided window size to size a circular send window (`slidingWindow`); it reads `buffer-size` bytes at a time from disk.
+- While the window is open, the server sends immediately and polls non-blocking for responses; when closed it polls for 1 s and resends the lowest unacked seqNum on timeout (up to 10 tries via `processPoll`).
+- `RR` advances the lower edge of the window; `SREJ` triggers targeted retransmission of that seqNum.
+- Receiver (`rcopy`) verifies checksum and drops corrupted PDUs. States: `IN_ORDER` writes immediately and RRs the next expected seqNum; `BUFFER` stores out-of-order data in `buffer.c` and SREJs the gap; `FLUSH` drains buffered contiguous data. `END_OF_FILE` acts as a flag-only PDU to trigger teardown.
+- After all data, the server waits for the final RR that frees the window, then sends `END_OF_FILE` and waits for `EOF_ACK` before exiting. The client sends `EOF_ACK` once the file is complete.
+- If the client polls for 10 seconds without data during transfer, it assumes the server is gone and terminates.
 
 ---
 
-## Acknowledgments
+## Notes
 
-This project was completed for **CPE 464 – Spring 2025** at **Cal Poly, San Luis Obispo**.
-
-The following materials were **provided by the course staff** and are acknowledged accordingly:
-
-* **poll library** (pollLib.c / pollLib.h)
-* **sendtoErr()** and **sendtoErr_init()**
-* **Internet checksum implementation**
-* Any instructor-provided header/skeleton templates
-* The assignment document defining the protocol requirements 
-
-All other logic—including the sliding-window design, buffering system, state machines, retransmission logic, packet handling, forked server architecture, teardown procedure, error handling, and all additional C source code—was written entirely by **Luke Trusheim**.
-
----
-Here are tighter, clearer versions of the **Skills Used** and **What I Learned** sections—lean, direct, and still professional.
-
-If you want them even shorter (bullet-only), tell me.
-
----
-
-## Skills Used
-
-* **UDP Socket Programming:** Building a custom transport protocol over datagrams, managing addresses, headers, checksums, and byte order.
-* **Sliding Window + SREJ:** Implementing window management, retransmissions, RR/SREJ logic, and out-of-order handling.
-* **Circular Buffer Design:** Creating a malloc’d, index-based ring buffer for both sender and receiver without external data structures.
-* **Event-Driven I/O:** Using poll() correctly for both non-blocking and 1-second blocking states depending on window openness.
-* **Multiprocessing:** Using fork() to serve multiple clients and handling correct re-initialization of sendtoErr() per child.
-* **Robust Systems-Level C:** Careful pointer use, buffer management, error handling, and strict adherence to assignment constraints.
-
----
-
-## What I Learned
-
-* How unreliable network behavior (loss, corruption, duplication, delay) forces careful protocol design.
-* How Selective Reject ARQ works in practice and why precise window logic matters.
-* How to manage timing without sleep() and rely entirely on poll()-based event loops.
-* How to structure sender/receiver state machines that handle many edge cases cleanly.
-* How concurrency (forked server processes) interacts with networking and error injection.
-* The amount of hidden complexity that real protocols like TCP abstract away.
+- Sockets are IPv6 (`AF_INET6`) but work with IPv4 hosts via IPv4-mapped addresses.
+- Sequence numbers start at 0 for both control and data PDUs.
+- The provided library `libcpe464.2.21.a` supplies `sendtoErr` and checksum helpers; it is linked by the `Makefile`.
