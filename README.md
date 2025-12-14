@@ -21,23 +21,23 @@ This project is a small, TCP-like file transfer built on top of UDP. UDP by itse
 
 ## Repository Layout
 
-- `rcopy.c` — client state machine, buffering, RR/SREJ logic, file writeout
-- `server.c` — fork-per-client UDP server, windowed sender, EOF/ack teardown
-- `slidingWindow.c/h` — sender-side circular window and resend helpers
-- `buffer.c/h` — receiver-side circular buffer for out-of-order PDUs
-- `pduHelpers.c/h` — PDU construction/parsing, checksum helpers
-- `pollLib.c/h`, `networks.c/h`, `safeUtil.c/h`, `gethostbyname.c/h` — provided course utilities
-- `sharedConstants.h`, `connection.h`, `checksum.h` — protocol constants and shared types
-- `Makefile`, `libcpe464.2.21.a` — build rules and provided `sendtoErr` library
+- `src/` — all C sources (`rcopy.c`, `server.c`, `pduHelpers.c`, `slidingWindow.c`, `buffer.c`, `pollLib.c`, `networks.c`, `safeUtil.c`, `gethostbyname.c`, sample TCP `myClient.c`/`myServer.c`)
+- `include/` — headers for the above, plus protocol constants (`sharedConstants.h`, `connection.h`, `checksum.h`, etc.)
+- `lib/` — provided `libcpe464.2.21.a` and the reference `libcpe464/` sources from the course
+- `bin/` — built executables (`rcopy`, `server`, `myClient`, `myServer`)
+- `build/` — intermediate objects (`build/obj`) and debug symbol folders
+- `data/` — sample files you can request/transfer (`fromFile.txt`, `420kb`, etc.)
+- `docs/` — assignment PDFs and design questions
+- `Makefile` — build rules
 
 ---
 
 ## Building
 
 ```bash
-make          # builds rcopy and server (udpAll target)
-make tcpAll   # builds sample TCP programs (not used by SREJ)
-make clean    # remove binaries and object files
+make          # builds bin/rcopy and bin/server (udpAll target)
+make tcpAll   # builds bin/myClient and bin/myServer (TCP samples)
+make clean    # removes bin/ and build/
 ```
 
 ---
@@ -47,7 +47,7 @@ make clean    # remove binaries and object files
 ### Server
 
 ```bash
-./server <error-rate> [port]
+./bin/server <error-rate> [port]
 ```
 
 - `error-rate`: 0 <= p < 1, passed to `sendtoErr_init()`
@@ -56,14 +56,14 @@ make clean    # remove binaries and object files
 Example:
 
 ```bash
-./server 0.1
+./bin/server 0.1
 Server using Port #: 52054
 ```
 
 ### Client
 
 ```bash
-./rcopy from-file to-file window-size buffer-size error-rate remote-machine remote-port
+./bin/rcopy from-file to-file window-size buffer-size error-rate remote-machine remote-port
 ```
 
 - `window-size`: receiver sliding window size (also sent to server for sender window)
@@ -75,7 +75,7 @@ Server using Port #: 52054
 Example:
 
 ```bash
-./rcopy fromFile.txt toFile.txt 10 1000 0.05 localhost 52054
+./bin/rcopy data/fromFile.txt data/toFile.txt 10 1000 0.05 localhost 52054
 ```
 
 ---
